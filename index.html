@@ -1,70 +1,148 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Smart Eater</title>
+  <meta charset="UTF-8">
+  <title>Smartest Eater</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: 0.25rem; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 1rem 0; }
+    .controls input[type="text"] { flex: 1; min-width: 200px; padding: 8px 12px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; }
+    .controls button { padding: 8px 14px; font-size: 0.95rem; border: none; border-radius: 6px; cursor: pointer; }
+    #locateBtn { background: #4a90e2; color: white; }
+    #locateBtn:hover { background: #357abd; }
+    #searchBtn { background: #2e7d32; color: white; }
+    #searchBtn:hover { background: #1b5e20; }
+    #locStatus { font-size: 0.85rem; color: #555; margin-top: -6px; margin-bottom: 8px; min-height: 1.2em; }
+    .summary { background: #f0f7ef; border: 1px solid #a5d6a7; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .store-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 10px; }
+    .store-card h3 { margin: 0 0 0.5rem; }
+    .store-card p { margin: 0.2rem 0; }
+    .badge { display: inline-block; background: #2e7d32; color: white; border-radius: 4px; font-size: 0.75rem; padding: 2px 6px; margin-left: 8px; vertical-align: middle; }
+    .loading { color: #888; font-style: italic; }
+  </style>
 </head>
 <body>
-  <h1>Smart Eater</h1>
+  <h1>🛒 Smart Eater</h1>
+  <p>Find the cheapest item at the nearest Kroger-family store.</p>
 
-  <input id="zip" placeholder="ZIP Code" value="85001">
-  <input id="item" placeholder="Food item" value="milk">
-  <button onclick="search()">Compare Stores</button>
+  <div class="controls">
+    <input type="text" id="location" placeholder="Address or ZIP code" value="85001">
+    <button id="locateBtn" onclick="useMyLocation()">📍 Use My Location</button>
+    <input type="text" id="item" placeholder="Food item" value="milk" style="max-width:160px;">
+    <button id="searchBtn" onclick="search()">Compare Stores</button>
+  </div>
+  <div id="locStatus"></div>
 
   <div id="summary"></div>
   <div id="results"></div>
 
   <script>
-    async function search() {
-      const zip = document.getElementById("zip").value;
-      const item = document.getElementById("item").value;
+    // Holds geolocation coords when the user clicks "Use My Location".
+    // Cleared if the user manually edits the location field afterward.
+    let geoCoords = null;
 
-      const res = await fetch(`http://localhost:3000/compare?zip=${zip}&item=${item}`);
-      const data = await res.json();
+    document.getElementById("location").addEventListener("input", () => {
+      geoCoords = null;
+      setLocStatus("");
+    });
+
+    function setLocStatus(msg, color = "#555") {
+      const el = document.getElementById("locStatus");
+      el.textContent = msg;
+      el.style.color = color;
+    }
+
+    function useMyLocation() {
+      if (!navigator.geolocation) {
+        setLocStatus("Geolocation is not supported by this browser.", "red");
+        return;
+      }
+
+      setLocStatus("Detecting your location…");
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          geoCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          document.getElementById("location").value =
+            `${geoCoords.lat.toFixed(5)}, ${geoCoords.lng.toFixed(5)}`;
+          setLocStatus("✅ Location detected — click Compare Stores.", "#2e7d32");
+        },
+        (err) => {
+          geoCoords = null;
+          setLocStatus(`Could not get location: ${err.message}`, "red");
+        }
+      );
+    }
+
+    async function search() {
+      const locationInput = document.getElementById("location").value.trim();
+      const item = document.getElementById("item").value.trim();
 
       const summaryDiv = document.getElementById("summary");
       const resultsDiv = document.getElementById("results");
 
-      summaryDiv.innerHTML = "";
+      summaryDiv.innerHTML = '<p class="loading">Searching stores…</p>';
       resultsDiv.innerHTML = "";
 
-      if (!data.stores || data.stores.length === 0) {
-        summaryDiv.innerHTML = "<h2>No store prices found.</h2>";
-        return;
+      // Build the query string based on what we have.
+      let queryString;
+      if (geoCoords) {
+        queryString = `lat=${geoCoords.lat}&lng=${geoCoords.lng}&item=${encodeURIComponent(item)}`;
+      } else if (/^\d{5}$/.test(locationInput)) {
+        queryString = `zip=${encodeURIComponent(locationInput)}&item=${encodeURIComponent(item)}`;
+      } else {
+        queryString = `address=${encodeURIComponent(locationInput)}&item=${encodeURIComponent(item)}`;
       }
 
-      const best = data.bestDeal;
+      try {
+        const res = await fetch(`http://localhost:3000/compare?${queryString}`);
+        const data = await res.json();
 
-      summaryDiv.innerHTML = `
-        <h2>Best Deal</h2>
-        <p><b>Store:</b> ${best.storeName}</p>
-        <p><b>Product:</b> ${best.product}</p>
-        <p><b>Price:</b> $${best.price.toFixed(2)}</p>
-        <p><b>Distance:</b> ${best.distanceMiles ?? "N/A"} miles</p>
-        <p><b>Drive time:</b> ${best.driveMinutes ?? "N/A"} minutes</p>
-        <p><b>Why:</b> Best balance of price + distance.</p>
-      `;
+        summaryDiv.innerHTML = "";
 
-      data.stores.forEach(store => {
-        const div = document.createElement("div");
-        div.style.border = "1px solid black";
-        div.style.margin = "10px";
-        div.style.padding = "10px";
+        if (!data.stores || data.stores.length === 0) {
+          summaryDiv.innerHTML = "<h2>No store prices found.</h2>";
+          return;
+        }
 
-        div.innerHTML = `
-          <h3>${store.storeName}</h3>
-          <p><b>Address:</b> ${store.address}</p>
-          <p><b>Product:</b> ${store.product}</p>
-          <p><b>Brand:</b> ${store.brand}</p>
-          <p><b>Size:</b> ${store.size}</p>
-          <p><b>Price:</b> $${store.price.toFixed(2)}</p>
-          <p><b>Distance:</b> ${store.distanceMiles ?? "N/A"} miles</p>
-          <p><b>Drive time:</b> ${store.driveMinutes ?? "N/A"} minutes</p>
-          <p><b>Stock:</b> ${store.stock}</p>
-          <p><b>Deal score:</b> ${store.dealScore}</p>
+        const best = data.bestDeal;
+
+        summaryDiv.innerHTML = `
+          <div class="summary">
+            <h2>🏆 Best Deal</h2>
+            <p><b>Store:</b> ${best.storeName} <span class="badge">Best</span></p>
+            <p><b>Product:</b> ${best.product} (${best.size})</p>
+            <p><b>Brand:</b> ${best.brand}</p>
+            <p><b>Price:</b> $${best.price.toFixed(2)}</p>
+            <p><b>Distance:</b> ${best.distanceMiles ?? "N/A"} miles</p>
+            <p><b>Drive time:</b> ${best.driveMinutes ?? "N/A"} minutes</p>
+            <p><b>Stock:</b> ${best.stock}</p>
+            <p style="color:#555;font-size:0.9rem;">💡 Best balance of price + distance.</p>
+          </div>
         `;
 
-        resultsDiv.appendChild(div);
-      });
+        data.stores.forEach((store, i) => {
+          const div = document.createElement("div");
+          div.className = "store-card";
+
+          div.innerHTML = `
+            <h3>${store.storeName}${i === 0 ? ' <span class="badge">Best Deal</span>' : ""}</h3>
+            <p><b>Address:</b> ${store.address}</p>
+            <p><b>Product:</b> ${store.product}</p>
+            <p><b>Brand:</b> ${store.brand}</p>
+            <p><b>Size:</b> ${store.size}</p>
+            <p><b>Price:</b> $${store.price.toFixed(2)}</p>
+            <p><b>Distance:</b> ${store.distanceMiles ?? "N/A"} miles &nbsp;·&nbsp; ${store.driveMinutes ?? "N/A"} min drive</p>
+            <p><b>Stock:</b> ${store.stock}</p>
+            <p style="color:#888;font-size:0.85rem;">Deal score: ${store.dealScore}</p>
+          `;
+
+          resultsDiv.appendChild(div);
+        });
+      } catch (err) {
+        summaryDiv.innerHTML = `<p style="color:red;">Error: ${err.message}. Is the server running?</p>`;
+      }
     }
   </script>
 </body>
