@@ -7,12 +7,28 @@
   <h1>Smart Eater</h1>
 
   <input id="zip" placeholder="ZIP Code" value="85001">
-  <input id="item" placeholder="Food (milk)">
+  <input id="item" placeholder="Food item" value="milk">
   <button onclick="search()">Search</button>
 
+  <div id="summary"></div>
   <div id="results"></div>
 
   <script>
+    function getPrice(product) {
+      return product.items?.[0]?.price?.regular || null;
+    }
+
+    function getSize(product) {
+      return product.items?.[0]?.size || "Unknown size";
+    }
+
+    function getProtein(product) {
+      const nutrition = product.nutritionInformation?.[0];
+      const nutrients = nutrition?.nutrients || [];
+      const protein = nutrients.find(n => n.displayName === "Protein");
+      return protein?.quantity || null;
+    }
+
     async function search() {
       const zip = document.getElementById("zip").value;
       const item = document.getElementById("item").value;
@@ -20,12 +36,43 @@
       const res = await fetch(`http://localhost:3000/search?zip=${zip}&item=${item}`);
       const data = await res.json();
 
+      const summaryDiv = document.getElementById("summary");
       const resultsDiv = document.getElementById("results");
+
+      summaryDiv.innerHTML = "";
       resultsDiv.innerHTML = "";
-      
-      resultsDiv.innerHTML = `<h2>Store: ${data.store}</h2>`;
-      data.products.forEach(p => {
-        const item = p.items[0];
+
+      const products = data.products.filter(p => getPrice(p) !== null);
+
+      if (products.length === 0) {
+        summaryDiv.innerHTML = "<h2>No prices found.</h2>";
+        return;
+      }
+
+      products.sort((a, b) => getPrice(a) - getPrice(b));
+
+      const cheapest = products[0];
+      const mostExpensive = products[products.length - 1];
+      const savings = getPrice(mostExpensive) - getPrice(cheapest);
+
+      summaryDiv.innerHTML = `
+        <h2>Store: ${data.store}</h2>
+        <h2>Analytics Summary</h2>
+        <p><b>Cheapest option:</b> ${cheapest.description} — $${getPrice(cheapest).toFixed(2)}</p>
+        <p><b>Most expensive option:</b> ${mostExpensive.description} — $${getPrice(mostExpensive).toFixed(2)}</p>
+        <p><b>Possible savings:</b> $${savings.toFixed(2)}</p>
+        <p><b>Smart suggestion:</b> Choose ${cheapest.description} to save money.</p>
+      `;
+
+      products.forEach(p => {
+        const price = getPrice(p);
+        const size = getSize(p);
+        const protein = getProtein(p);
+
+        let proteinText = "Not available";
+        if (protein) {
+          proteinText = `${protein}g protein per serving`;
+        }
 
         const div = document.createElement("div");
         div.style.border = "1px solid black";
@@ -34,8 +81,11 @@
 
         div.innerHTML = `
           <h3>${p.description}</h3>
-          <p>Brand: ${p.brand}</p>
-          <p>Price: $${item.price.regular}</p>
+          <p><b>Brand:</b> ${p.brand}</p>
+          <p><b>Price:</b> $${price.toFixed(2)}</p>
+          <p><b>Size:</b> ${size}</p>
+          <p><b>Nutrition insight:</b> ${proteinText}</p>
+          <p><b>Stock:</b> ${p.items?.[0]?.inventory?.stockLevel || "Unknown"}</p>
         `;
 
         resultsDiv.appendChild(div);
