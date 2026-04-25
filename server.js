@@ -23,14 +23,11 @@ function httpsRequest(options, body = null) {
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res) => {
       const chunks = [];
-
       res.on("data", (chunk) => chunks.push(chunk));
-
       res.on("end", () => {
         try {
           const buffer = Buffer.concat(chunks);
           const text = decodeResponse(buffer, res.headers["content-encoding"]);
-
           try {
             resolve({ status: res.statusCode, body: JSON.parse(text) });
           } catch {
@@ -41,9 +38,7 @@ function httpsRequest(options, body = null) {
         }
       });
     });
-
     req.on("error", reject);
-
     if (body) req.write(body);
     req.end();
   });
@@ -89,11 +84,39 @@ async function getToken() {
   return accessToken;
 }
 
-async function getLocations(zipCode) {
+// Geocode an address string -> { lat, lng } using Google Maps Geocoding API.
+// Returns null if the API key is missing or the address can't be resolved.
+async function geocodeAddress(address) {
+  if (!GOOGLE_MAPS_API_KEY) return null;
+
+  const response = await httpsRequest({
+    hostname: "maps.googleapis.com",
+    path: `/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_MAPS_API_KEY}`,
+    method: "GET",
+    headers: { Accept: "application/json", "Accept-Encoding": "identity" },
+  });
+
+  const result = response.body.results?.[0];
+  if (!result) return null;
+
+  const { lat, lng } = result.geometry.location;
+  return { lat, lng };
+}
+
+// origin: ZIP string OR { lat, lng } object.
+// Kroger supports filter.latLong.near=lat,lng as well as filter.zipCode.near=zip.
+async function getLocations(origin) {
   const token = await getToken();
 
+  let filterParam;
+  if (typeof origin === "object" && origin.lat != null && origin.lng != null) {
+    filterParam = `filter.latLong.near=${origin.lat},${origin.lng}`;
+  } else {
+    filterParam = `filter.zipCode.near=${encodeURIComponent(origin)}`;
+  }
+
   const path =
-    `/v1/locations?filter.zipCode.near=${encodeURIComponent(zipCode)}` +
+    `/v1/locations?${filterParam}` +
     `&filter.radiusInMiles=20` +
     `&filter.limit=10`;
 
@@ -138,13 +161,26 @@ function getStoreAddress(store) {
   return `${a.addressLine1 || ""}, ${a.city || ""}, ${a.state || ""} ${a.zipCode || ""}`;
 }
 
+// origin: address string OR { lat, lng } object.
 async function getDistance(origin, destination) {
   if (!GOOGLE_MAPS_API_KEY) {
     return { miles: null, minutes: null };
   }
 
+  // Routes API accepts a location object for lat/lng or an address string.
+  let originField;
+  if (typeof origin === "object" && origin.lat != null) {
+    originField = {
+      location: {
+        latLng: { latitude: origin.lat, longitude: origin.lng },
+      },
+    };
+  } else {
+    originField = { address: origin };
+  }
+
   const body = JSON.stringify({
-    origin: { address: origin },
+    origin: originField,
     destination: { address: destination },
     travelMode: "DRIVE",
     units: "IMPERIAL",
@@ -166,7 +202,6 @@ async function getDistance(origin, destination) {
   );
 
   const route = response.body.routes?.[0];
-
   if (!route) return { miles: null, minutes: null };
 
   const miles = route.distanceMeters / 1609.34;
@@ -189,8 +224,22 @@ function getLowestPricedProduct(products) {
   return valid[0];
 }
 
-async function compareStores(zip, item) {
-  const locations = await getLocations(zip);
+// origin: ZIP string, full address string, or { lat, lng } object.
+async function compareStores(origin, item) {
+  // If origin is a non-ZIP address string, geocode it to lat/lng for accuracy.
+  let resolvedOrigin = origin;
+
+  if (
+    typeof origin === "string" &&
+    !/^\d{5}$/.test(origin.trim()) &&
+    GOOGLE_MAPS_API_KEY
+  ) {
+    const coords = await geocodeAddress(origin);
+    if (coords) resolvedOrigin = coords;
+    // If geocoding fails, fall back to passing the raw string.
+  }
+
+  const locations = await getLocations(resolvedOrigin);
 
   if (!locations.data || locations.data.length === 0) {
     return [];
@@ -208,7 +257,7 @@ async function compareStores(zip, item) {
 
     const price = bestProduct.items[0].price.regular;
     const address = getStoreAddress(store);
-    const distance = await getDistance(zip, address);
+    const distance = await getDistance(resolvedOrigin, address);
 
     const dealScore = price + (distance.miles || 0) * 0.25;
 
@@ -260,10 +309,19 @@ const server = http.createServer(async (req, res) => {
     if (parsed.pathname === "/compare") {
       res.setHeader("Content-Type", "application/json");
 
-      const zip = parsed.query.zip || "85001";
-      const item = parsed.query.item || "milk";
+      const { lat, lng, address, zip, item = "milk" } = parsed.query;
 
-      const results = await compareStores(zip, item);
+      // Priority: lat+lng (geolocation) > address (typed) > zip (legacy)
+      let origin;
+      if (lat && lng) {
+        origin = { lat: parseFloat(lat), lng: parseFloat(lng) };
+      } else if (address) {
+        origin = address;
+      } else {
+        origin = zip || "85001";
+      }
+
+      const results = await compareStores(origin, item);
 
       res.writeHead(200);
       res.end(
@@ -289,5 +347,8 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(3000, () => {
   console.log("Smart Eater running at http://localhost:3000");
-  console.log("Try: http://localhost:3000/compare?zip=85001&item=milk");
+  console.log("Usage examples:");
+  console.log("  ZIP:      http://localhost:3000/compare?zip=85001&item=milk");
+  console.log("  Address:  http://localhost:3000/compare?address=1600+Amphitheatre+Pkwy,+Mountain+View,+CA&item=eggs");
+  console.log("  Lat/Lng:  http://localhost:3000/compare?lat=33.4484&lng=-112.074&item=bread");
 });
