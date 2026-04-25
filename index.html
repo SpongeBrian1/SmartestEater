@@ -18,7 +18,7 @@
       const zip = document.getElementById("zip").value;
       const item = document.getElementById("item").value;
 
-      const res = await fetch(`https://smart-eater.onrender.com/compare?zip=${zip}&item=${item}`);
+      const res = await fetch(`http://localhost:3000/compare?zip=${zip}&item=${item}`);
       const data = await res.json();
 
       const summaryDiv = document.getElementById("summary");
