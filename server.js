@@ -7,6 +7,7 @@ require("dotenv").config();
 
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 let accessToken = null;
 let tokenExpiry = 0;
@@ -22,15 +23,11 @@ function httpsRequest(options, body = null) {
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res) => {
       const chunks = [];
-
       res.on("data", (chunk) => chunks.push(chunk));
-
       res.on("end", () => {
         try {
           const buffer = Buffer.concat(chunks);
-          const encoding = res.headers["content-encoding"];
-          const text = decodeResponse(buffer, encoding);
-
+          const text = decodeResponse(buffer, res.headers["content-encoding"]);
           try {
             resolve({ status: res.statusCode, body: JSON.parse(text) });
           } catch {
@@ -43,19 +40,16 @@ function httpsRequest(options, body = null) {
     });
 
     req.on("error", reject);
-
     if (body) req.write(body);
     req.end();
   });
 }
 
 async function getToken() {
-  if (accessToken && Date.now() < tokenExpiry) {
-    return accessToken;
-  }
+  if (accessToken && Date.now() < tokenExpiry) return accessToken;
 
   if (!CLIENT_ID || !CLIENT_SECRET) {
-    throw new Error("Missing CLIENT_ID or CLIENT_SECRET in .env file");
+    throw new Error("Missing CLIENT_ID or CLIENT_SECRET in .env");
   }
 
   const creds = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
@@ -87,7 +81,6 @@ async function getToken() {
 
   accessToken = response.body.access_token;
   tokenExpiry = Date.now() + (response.body.expires_in - 60) * 1000;
-
   return accessToken;
 }
 
@@ -96,7 +89,9 @@ async function getLocations(zipCode) {
 
   const path =
     `/v1/locations?filter.zipCode.near=${encodeURIComponent(zipCode)}` +
-    `&filter.radiusInMiles=10&filter.limit=5`;
+    `&filter.chain=Frys` +
+    `&filter.radiusInMiles=15` +
+    `&filter.limit=5`;
 
   const response = await httpsRequest({
     hostname: "api.kroger.com",
@@ -134,6 +129,113 @@ async function searchProducts(term, locationId) {
   return response.body;
 }
 
+function getStoreAddress(store) {
+  const a = store.address || {};
+  return `${a.addressLine1 || ""}, ${a.city || ""}, ${a.state || ""} ${a.zipCode || ""}`;
+}
+
+async function getDistance(origin, destination) {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return { miles: null, minutes: null };
+  }
+
+  const body = JSON.stringify({
+    origin: {
+      address: origin,
+    },
+    destination: {
+      address: destination,
+    },
+    travelMode: "DRIVE",
+    units: "IMPERIAL",
+  });
+
+  const response = await httpsRequest(
+    {
+      hostname: "routes.googleapis.com",
+      path: "/directions/v2:computeRoutes",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
+      },
+    },
+    body
+  );
+
+  const route = response.body.routes?.[0];
+
+  if (!route) {
+    return { miles: null, minutes: null };
+  }
+
+  const miles = route.distanceMeters / 1609.34;
+  const seconds = parseInt(route.duration.replace("s", ""), 10);
+  const minutes = seconds / 60;
+
+  return {
+    miles: Number(miles.toFixed(2)),
+    minutes: Number(minutes.toFixed(0)),
+  };
+}
+
+function getLowestPricedProduct(products) {
+  const validProducts = (products.data || []).filter(
+    (p) => p.items?.[0]?.price?.regular
+  );
+
+  if (validProducts.length === 0) return null;
+
+  validProducts.sort(
+    (a, b) => a.items[0].price.regular - b.items[0].price.regular
+  );
+
+  return validProducts[0];
+}
+
+async function compareStores(zip, item) {
+  const locations = await getLocations(zip);
+
+  if (!locations.data || locations.data.length === 0) {
+    return [];
+  }
+
+  const results = [];
+
+  for (const store of locations.data) {
+    const locationId = store.locationId;
+    const productData = await searchProducts(item, locationId);
+    const bestProduct = getLowestPricedProduct(productData);
+
+    if (!bestProduct) continue;
+
+    const price = bestProduct.items[0].price.regular;
+    const storeAddress = getStoreAddress(store);
+    const distance = await getDistance(zip, storeAddress);
+
+    const dealScore = price + (distance.miles || 0) * 0.25;
+
+    results.push({
+      storeName: store.name,
+      locationId,
+      address: storeAddress,
+      distanceMiles: distance.miles,
+      driveMinutes: distance.minutes,
+      product: bestProduct.description,
+      brand: bestProduct.brand,
+      size: bestProduct.items[0].size,
+      price,
+      stock: bestProduct.items[0].inventory?.stockLevel || "Unknown",
+      dealScore: Number(dealScore.toFixed(2)),
+    });
+  }
+
+  results.sort((a, b) => a.dealScore - b.dealScore);
+  return results;
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -156,61 +258,16 @@ const server = http.createServer(async (req, res) => {
       } else {
         res.end("<h1>Smart Eater Backend Running</h1>");
       }
-
       return;
     }
 
-    if (parsed.pathname === "/locations") {
-      res.setHeader("Content-Type", "application/json");
-
-      const zip = parsed.query.zip || "85001";
-      const data = await getLocations(zip);
-
-      res.writeHead(200);
-      res.end(JSON.stringify(data, null, 2));
-      return;
-    }
-
-    if (parsed.pathname === "/products") {
-      res.setHeader("Content-Type", "application/json");
-
-      const { term, locationId } = parsed.query;
-
-      if (!term || !locationId) {
-        res.writeHead(400);
-        res.end(
-          JSON.stringify(
-            { error: "term and locationId are required" },
-            null,
-            2
-          )
-        );
-        return;
-      }
-
-      const data = await searchProducts(term, locationId);
-
-      res.writeHead(200);
-      res.end(JSON.stringify(data, null, 2));
-      return;
-    }
-
-    if (parsed.pathname === "/search") {
+    if (parsed.pathname === "/compare") {
       res.setHeader("Content-Type", "application/json");
 
       const zip = parsed.query.zip || "85001";
       const item = parsed.query.item || "milk";
 
-      const locations = await getLocations(zip);
-
-      if (!locations.data || locations.data.length === 0) {
-        res.writeHead(404);
-        res.end(JSON.stringify({ error: "No stores found" }, null, 2));
-        return;
-      }
-
-      const locationId = locations.data[0].locationId;
-      const products = await searchProducts(item, locationId);
+      const results = await compareStores(zip, item);
 
       res.writeHead(200);
       res.end(
@@ -218,9 +275,8 @@ const server = http.createServer(async (req, res) => {
           {
             zip,
             item,
-            locationId,
-            store: locations.data[0].name,
-            products: products.data || [],
+            bestDeal: results[0] || null,
+            stores: results,
           },
           null,
           2
@@ -241,5 +297,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(3000, () => {
   console.log("Smart Eater running at http://localhost:3000");
-  console.log("Try: http://localhost:3000/search?zip=85001&item=milk");
+  console.log("Try: http://localhost:3000/compare?zip=85001&item=milk");
 });
