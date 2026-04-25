@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Eater</title>
+</head>
+<body>
+  <h1>Smart Eater</h1>
+
+  <input id="zip" placeholder="ZIP Code" value="85001">
+  <input id="item" placeholder="Food (milk)">
+  <button onclick="search()">Search</button>
+
+  <div id="results"></div>
+
+  <script>
+    async function search() {
+      const zip = document.getElementById("zip").value;
+      const item = document.getElementById("item").value;
+
+      const res = await fetch(`http://localhost:3000/search?zip=${zip}&item=${item}`);
+      const data = await res.json();
+
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "";
+
+      data.products.forEach(p => {
+        const item = p.items[0];
+
+        const div = document.createElement("div");
+        div.style.border = "1px solid black";
+        div.style.margin = "10px";
+        div.style.padding = "10px";
+
+        div.innerHTML = `
+          <h3>${p.description}</h3>
+          <p>Brand: ${p.brand}</p>
+          <p>Price: $${item.price.regular}</p>
+        `;
+
+        resultsDiv.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>
