@@ -1,149 +1,537 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Smartest Eater</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Eater</title>
   <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-    h1 { margin-bottom: 0.25rem; }
-    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 1rem 0; }
-    .controls input[type="text"] { flex: 1; min-width: 200px; padding: 8px 12px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; }
-    .controls button { padding: 8px 14px; font-size: 0.95rem; border: none; border-radius: 6px; cursor: pointer; }
-    #locateBtn { background: #4a90e2; color: white; }
-    #locateBtn:hover { background: #357abd; }
-    #searchBtn { background: #2e7d32; color: white; }
-    #searchBtn:hover { background: #1b5e20; }
-    #locStatus { font-size: 0.85rem; color: #555; margin-top: -6px; margin-bottom: 8px; min-height: 1.2em; }
-    .summary { background: #f0f7ef; border: 1px solid #a5d6a7; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
-    .store-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 10px; }
-    .store-card h3 { margin: 0 0 0.5rem; }
-    .store-card p { margin: 0.2rem 0; }
-    .badge { display: inline-block; background: #2e7d32; color: white; border-radius: 4px; font-size: 0.75rem; padding: 2px 6px; margin-left: 8px; vertical-align: middle; }
-    .loading { color: #888; font-style: italic; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 1rem 1.5rem;
+    }
+
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header p { font-size: 0.875rem; color: #555; margin-top: 2px; }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 1.25rem; }
+    .tab-btn {
+      padding: 8px 20px;
+      border: 1px solid #ccc;
+      border-radius: 20px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .tab-btn.active { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+
+    /* ── Controls card ── */
+    .card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+    .row:last-child { margin-bottom: 0; }
+
+    label { font-size: 0.8rem; font-weight: 600; color: #444; display: block; margin-bottom: 4px; }
+
+    input[type="text"], textarea {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 0.95rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-family: inherit;
+    }
+    input[type="text"]:focus, textarea:focus { outline: 2px solid #2e7d32; border-color: transparent; }
+    textarea { resize: vertical; min-height: 110px; }
+
+    .field { flex: 1; min-width: 160px; }
+    .field-sm { width: 160px; flex: none; }
+
+    .btn {
+      padding: 9px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .btn-blue  { background: #1565c0; color: #fff; }
+    .btn-blue:hover  { background: #0d47a1; }
+    .btn-green { background: #2e7d32; color: #fff; }
+    .btn-green:hover { background: #1b5e20; }
+    .btn-outline { background: #fff; border: 1px solid #ccc; color: #333; }
+    .btn-outline:hover { background: #f5f5f5; }
+
+    #locStatus { font-size: 0.82rem; color: #555; min-height: 1.1em; margin-top: 4px; }
+
+    .hint { font-size: 0.8rem; color: #777; margin-top: 6px; }
+
+    /* ── Ingredient list ── */
+    #ingredientList { list-style: none; margin-bottom: 10px; }
+    #ingredientList li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    #ingredientList li input { flex: 1; }
+    .remove-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #b71c1c;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 2px 6px;
+    }
+    .remove-btn:hover { color: #d32f2f; }
+
+    /* ── Results ── */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 1.25rem 0 0.75rem;
+      color: #1a1a1a;
+    }
+
+    /* Best deal banner */
+    .best-banner {
+      background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+      border: 1px solid #a5d6a7;
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .best-banner h2 { font-size: 1.1rem; margin-bottom: 0.6rem; }
+    .best-banner .store-name { font-size: 1rem; font-weight: 700; }
+    .meta-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 0.875rem; color: #444; }
+    .meta-row span b { color: #1a1a1a; }
+
+    /* ── Recipe comparison table ── */
+    .table-wrap { overflow-x: auto; margin-bottom: 1.25rem; }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 500px;
+      font-size: 0.82rem;
+    }
+    th {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+      padding: 7px 10px;
+      text-align: left;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    th.store-col { background: #e8f5e9; }
+    td {
+      border: 1px solid #ddd;
+      padding: 6px 10px;
+      vertical-align: top;
+    }
+    tr.best-row td { background: #f1f8e9; }
+    tr.split-row td { background: #e3f2fd; }
+    tr:hover td { background: #fafafa; }
+    tr.best-row:hover td { background: #e8f5e9; }
+    tr.split-row:hover td { background: #dbeeff; }
+
+    .price-cell { font-weight: 700; color: #2e7d32; white-space: nowrap; }
+    .price-cell.best-price { color: #1b5e20; }
+    .missing-cell { color: #b71c1c; font-style: italic; font-size: 0.78rem; }
+    .total-cell { font-weight: 700; font-size: 0.9rem; }
+    .product-name { font-weight: 600; }
+    .product-meta { font-size: 0.75rem; color: #777; }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      vertical-align: middle;
+      margin-left: 4px;
+    }
+    .badge-best { background: #2e7d32; color: #fff; }
+    .badge-split { background: #1565c0; color: #fff; }
+    .badge-missing { background: #b71c1c; color: #fff; }
+
+    /* ── Store cards for single-item ── */
+    .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .store-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .store-card.best { border-color: #a5d6a7; background: #f9fdf9; }
+    .store-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 6px; }
+    .store-card p { font-size: 0.85rem; margin: 3px 0; color: #444; }
+    .store-card p b { color: #1a1a1a; }
+
+    /* ── Split savings callout ── */
+    .split-callout {
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+    }
+    .split-callout strong { font-size: 1rem; }
+
+    .loading { color: #777; font-style: italic; padding: 1rem 0; }
+    .error { color: #b71c1c; padding: 1rem 0; }
   </style>
 </head>
 <body>
+
+<header>
   <h1>🛒 Smart Eater</h1>
-  <p>Find the cheapest item at the nearest Kroger-family store.</p>
+  <p>Find the cheapest groceries at the nearest Kroger-family stores.</p>
+</header>
 
-  <div class="controls">
-    <input type="text" id="location" placeholder="Address or ZIP code" value="85001">
-    <button id="locateBtn" onclick="useMyLocation()">📍 Use My Location</button>
-    <input type="text" id="item" placeholder="Food item" value="milk" style="max-width:160px;">
-    <button id="searchBtn" onclick="search()">Compare Stores</button>
+<div class="container">
+
+  <!-- ── Mode tabs ── -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="setMode('item')">Single Item</button>
+    <button class="tab-btn" onclick="setMode('recipe')">Recipe / Shopping List</button>
   </div>
-  <div id="locStatus"></div>
 
-  <div id="summary"></div>
+  <!-- ── Controls ── -->
+  <div class="card">
+    <!-- Location row (shared) -->
+    <div class="row">
+      <div class="field">
+        <label for="location">Your location</label>
+        <input type="text" id="location" placeholder="Address or ZIP code" value="85001">
+      </div>
+      <button class="btn btn-blue" onclick="useMyLocation()">📍 Use My Location</button>
+    </div>
+    <div id="locStatus"></div>
+
+    <!-- Single-item controls -->
+    <div id="itemControls" class="row" style="margin-top:10px;">
+      <div class="field">
+        <label for="item">Item to search</label>
+        <input type="text" id="item" placeholder="e.g. milk, eggs, bread" value="milk">
+      </div>
+      <button class="btn btn-green" onclick="searchItem()">Compare Stores</button>
+    </div>
+
+    <!-- Recipe controls -->
+    <div id="recipeControls" style="display:none; margin-top:10px;">
+      <label>Ingredients <span style="font-weight:400;color:#777">(one per line, or comma-separated)</span></label>
+      <textarea id="recipeText" placeholder="milk&#10;eggs&#10;all-purpose flour&#10;unsalted butter&#10;sugar"></textarea>
+      <div class="hint">💡 Use ingredient names as you'd search a grocery store (e.g. "all-purpose flour" not "2 cups flour").</div>
+      <div class="row" style="margin-top:10px; justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="clearRecipe()">Clear</button>
+        <button class="btn btn-green" onclick="searchRecipe()">Find Best Store</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Results ── -->
   <div id="results"></div>
 
-  <script>
-    // Holds geolocation coords when the user clicks "Use My Location".
-    // Cleared if the user manually edits the location field afterward.
-    let geoCoords = null;
+</div>
 
-    document.getElementById("location").addEventListener("input", () => {
-      geoCoords = null;
-      setLocStatus("");
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let geoCoords = null;
+  let currentMode = "item";
+
+  // ── Mode switching ─────────────────────────────────────────────────────────
+  function setMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll(".tab-btn").forEach((b, i) => {
+      b.classList.toggle("active", (i === 0) === (mode === "item"));
     });
+    document.getElementById("itemControls").style.display   = mode === "item"   ? "" : "none";
+    document.getElementById("recipeControls").style.display = mode === "recipe" ? "" : "none";
+    document.getElementById("results").innerHTML = "";
+  }
 
-    function setLocStatus(msg, color = "#555") {
-      const el = document.getElementById("locStatus");
-      el.textContent = msg;
-      el.style.color = color;
+  // ── Location ───────────────────────────────────────────────────────────────
+  document.getElementById("location").addEventListener("input", () => {
+    geoCoords = null;
+    setLocStatus("");
+  });
+
+  function setLocStatus(msg, color = "#555") {
+    const el = document.getElementById("locStatus");
+    el.textContent = msg;
+    el.style.color = color;
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setLocStatus("Geolocation is not supported by this browser.", "red");
+      return;
     }
+    setLocStatus("Detecting your location…");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        geoCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        document.getElementById("location").value =
+          `${geoCoords.lat.toFixed(5)}, ${geoCoords.lng.toFixed(5)}`;
+        setLocStatus("✅ Location detected — click Compare Stores.", "#2e7d32");
+      },
+      (err) => {
+        geoCoords = null;
+        setLocStatus(`Could not get location: ${err.message}`, "red");
+      }
+    );
+  }
 
-    function useMyLocation() {
-      if (!navigator.geolocation) {
-        setLocStatus("Geolocation is not supported by this browser.", "red");
+  function buildOriginParams() {
+    if (geoCoords) return `lat=${geoCoords.lat}&lng=${geoCoords.lng}`;
+    const loc = document.getElementById("location").value.trim();
+    if (/^\d{5}$/.test(loc)) return `zip=${encodeURIComponent(loc)}`;
+    return `address=${encodeURIComponent(loc)}`;
+  }
+
+  // ── Recipe helpers ─────────────────────────────────────────────────────────
+  function parseIngredients() {
+    return document.getElementById("recipeText").value
+      .split(/[\n,]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  function clearRecipe() {
+    document.getElementById("recipeText").value = "";
+    document.getElementById("results").innerHTML = "";
+  }
+
+  // ── Single item search ─────────────────────────────────────────────────────
+  async function searchItem() {
+    const item = document.getElementById("item").value.trim();
+    if (!item) return;
+
+    const resultsDiv = document.getElementById("results");
+    resultsDiv.innerHTML = '<p class="loading">Searching stores…</p>';
+
+    try {
+      const qs = `${buildOriginParams()}&item=${encodeURIComponent(item)}`;
+      const data = await fetch(`http://localhost:3000/compare?${qs}`).then(r => r.json());
+
+      if (!data.stores?.length) {
+        resultsDiv.innerHTML = '<p class="error">No stores or prices found for that item.</p>';
         return;
       }
 
-      setLocStatus("Detecting your location…");
+      const best = data.bestDeal;
+      let html = `
+        <div class="best-banner">
+          <h2>🏆 Best Deal for "${escHtml(item)}"</h2>
+          <div class="store-name">${escHtml(best.storeName)} <span class="badge badge-best">Best</span></div>
+          <div class="meta-row">
+            <span><b>${escHtml(best.product)}</b> — ${escHtml(best.brand || "")} ${escHtml(best.size || "")}</span>
+          </div>
+          <div class="meta-row">
+            <span>💲 <b>$${best.price.toFixed(2)}</b></span>
+            <span>📍 <b>${best.distanceMiles ?? "N/A"} mi</b></span>
+            <span>🚗 <b>${best.driveMinutes ?? "N/A"} min</b></span>
+            <span>📦 ${escHtml(best.stock)}</span>
+          </div>
+        </div>
+        <div class="store-grid">
+      `;
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          geoCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          document.getElementById("location").value =
-            `${geoCoords.lat.toFixed(5)}, ${geoCoords.lng.toFixed(5)}`;
-          setLocStatus("✅ Location detected — click Compare Stores.", "#2e7d32");
-        },
-        (err) => {
-          geoCoords = null;
-          setLocStatus(`Could not get location: ${err.message}`, "red");
-        }
-      );
-    }
-
-    async function search() {
-      const locationInput = document.getElementById("location").value.trim();
-      const item = document.getElementById("item").value.trim();
-
-      const summaryDiv = document.getElementById("summary");
-      const resultsDiv = document.getElementById("results");
-
-      summaryDiv.innerHTML = '<p class="loading">Searching stores…</p>';
-      resultsDiv.innerHTML = "";
-
-      // Build the query string based on what we have.
-      let queryString;
-      if (geoCoords) {
-        queryString = `lat=${geoCoords.lat}&lng=${geoCoords.lng}&item=${encodeURIComponent(item)}`;
-      } else if (/^\d{5}$/.test(locationInput)) {
-        queryString = `zip=${encodeURIComponent(locationInput)}&item=${encodeURIComponent(item)}`;
-      } else {
-        queryString = `address=${encodeURIComponent(locationInput)}&item=${encodeURIComponent(item)}`;
-      }
-
-      try {
-        const res = await fetch(`http://localhost:3000/compare?${queryString}`);
-        const data = await res.json();
-
-        summaryDiv.innerHTML = "";
-
-        if (!data.stores || data.stores.length === 0) {
-          summaryDiv.innerHTML = "<h2>No store prices found.</h2>";
-          return;
-        }
-
-        const best = data.bestDeal;
-
-        summaryDiv.innerHTML = `
-          <div class="summary">
-            <h2>🏆 Best Deal</h2>
-            <p><b>Store:</b> ${best.storeName} <span class="badge">Best</span></p>
-            <p><b>Product:</b> ${best.product} (${best.size})</p>
-            <p><b>Brand:</b> ${best.brand}</p>
-            <p><b>Price:</b> $${best.price.toFixed(2)}</p>
-            <p><b>Distance:</b> ${best.distanceMiles ?? "N/A"} miles</p>
-            <p><b>Drive time:</b> ${best.driveMinutes ?? "N/A"} minutes</p>
-            <p><b>Stock:</b> ${best.stock}</p>
-            <p style="color:#555;font-size:0.9rem;">💡 Best balance of price + distance.</p>
+      data.stores.forEach((store, i) => {
+        html += `
+          <div class="store-card ${i === 0 ? "best" : ""}">
+            <h3>${escHtml(store.storeName)}${i === 0 ? ' <span class="badge badge-best">Best</span>' : ""}</h3>
+            <p><b>Product:</b> ${escHtml(store.product)}</p>
+            <p><b>Brand:</b> ${escHtml(store.brand || "—")}</p>
+            <p><b>Size:</b> ${escHtml(store.size || "—")}</p>
+            <p><b>Price:</b> $${store.price.toFixed(2)}</p>
+            <p><b>Distance:</b> ${store.distanceMiles ?? "N/A"} mi · ${store.driveMinutes ?? "N/A"} min</p>
+            <p><b>Stock:</b> ${escHtml(store.stock)}</p>
+            <p style="color:#999;font-size:0.78rem;margin-top:6px;">Deal score: ${store.dealScore}</p>
           </div>
         `;
+      });
 
-        data.stores.forEach((store, i) => {
-          const div = document.createElement("div");
-          div.className = "store-card";
-
-          div.innerHTML = `
-            <h3>${store.storeName}${i === 0 ? ' <span class="badge">Best Deal</span>' : ""}</h3>
-            <p><b>Address:</b> ${store.address}</p>
-            <p><b>Product:</b> ${store.product}</p>
-            <p><b>Brand:</b> ${store.brand}</p>
-            <p><b>Size:</b> ${store.size}</p>
-            <p><b>Price:</b> $${store.price.toFixed(2)}</p>
-            <p><b>Distance:</b> ${store.distanceMiles ?? "N/A"} miles &nbsp;·&nbsp; ${store.driveMinutes ?? "N/A"} min drive</p>
-            <p><b>Stock:</b> ${store.stock}</p>
-            <p style="color:#888;font-size:0.85rem;">Deal score: ${store.dealScore}</p>
-          `;
-
-          resultsDiv.appendChild(div);
-        });
-      } catch (err) {
-        summaryDiv.innerHTML = `<p style="color:red;">Error: ${err.message}. Is the server running?</p>`;
-      }
+      html += "</div>";
+      resultsDiv.innerHTML = html;
+    } catch (err) {
+      resultsDiv.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
     }
-  </script>
+  }
+
+  // ── Recipe search ──────────────────────────────────────────────────────────
+  async function searchRecipe() {
+    const ingredients = parseIngredients();
+    if (!ingredients.length) {
+      document.getElementById("results").innerHTML =
+        '<p class="error">Please enter at least one ingredient.</p>';
+      return;
+    }
+
+    const resultsDiv = document.getElementById("results");
+    resultsDiv.innerHTML = `<p class="loading">Checking ${ingredients.length} ingredient(s) across nearby stores… this may take a moment.</p>`;
+
+    try {
+      const qs = `${buildOriginParams()}&ingredients=${encodeURIComponent(ingredients.join(","))}`;
+      const data = await fetch(`http://localhost:3000/recipe?${qs}`).then(r => r.json());
+
+      if (!data.stores?.length) {
+        resultsDiv.innerHTML = '<p class="error">No stores found nearby.</p>';
+        return;
+      }
+
+      const best = data.stores[0];
+      const splitSavings = best.totalPrice > 0
+        ? (best.totalPrice - data.splitTotal).toFixed(2)
+        : null;
+
+      // ── Best store banner ──
+      let html = `
+        <div class="best-banner">
+          <h2>🏆 Best Store for This Recipe</h2>
+          <div class="store-name">${escHtml(best.storeName)} <span class="badge badge-best">Best</span></div>
+          <div class="meta-row">
+            <span>💲 Total: <b>$${best.totalPrice.toFixed(2)}</b></span>
+            <span>📍 <b>${best.distanceMiles ?? "N/A"} mi</b></span>
+            <span>🚗 <b>${best.driveMinutes ?? "N/A"} min</b></span>
+            ${best.missingCount > 0
+              ? `<span style="color:#b71c1c">⚠️ Missing ${best.missingCount} ingredient(s)</span>`
+              : '<span style="color:#2e7d32">✅ All ingredients found</span>'}
+          </div>
+        </div>
+      `;
+
+      // ── Split shopping callout (only if meaningful) ──
+      if (data.splitTotal > 0 && splitSavings > 0) {
+        html += `
+          <div class="split-callout">
+            <span class="badge badge-split">Split Shopping</span>
+            &nbsp;Buying the cheapest of each ingredient across different stores costs
+            <strong>$${data.splitTotal.toFixed(2)}</strong> total
+            (saves <strong>$${splitSavings}</strong> vs. shopping at one place,
+            but requires visiting multiple stores).
+            See the <em>Cheapest Split</em> row in the table below.
+          </div>
+        `;
+      }
+
+      // ── Comparison table ──
+      html += `
+        <p class="section-title">Full Comparison — All Stores × All Ingredients</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="store-col">Store</th>
+                <th class="store-col">Distance</th>
+      `;
+
+      ingredients.forEach(ing => {
+        html += `<th>${escHtml(ing)}</th>`;
+      });
+
+      html += `
+                <th class="store-col">Total</th>
+                <th class="store-col">Missing</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      data.stores.forEach((store, si) => {
+        const rowClass = si === 0 ? "best-row" : "";
+        html += `<tr class="${rowClass}">`;
+        html += `<td>
+          <span class="product-name">${escHtml(store.storeName)}</span>
+          ${si === 0 ? '<span class="badge badge-best">Best</span>' : ""}
+          <div class="product-meta">${escHtml(store.address)}</div>
+        </td>`;
+        html += `<td><span class="product-meta">${store.distanceMiles ?? "N/A"} mi · ${store.driveMinutes ?? "N/A"} min</span></td>`;
+
+        store.ingredients.forEach((ing) => {
+          if (!ing.found) {
+            html += `<td class="missing-cell">Not found</td>`;
+          } else {
+            // Check if this is the cheapest price for this ingredient
+            const isCheapest = data.splitBest.find(
+              s => s.ingredient === ing.query && s.cheapest?.storeName === store.storeName
+            );
+            html += `
+              <td>
+                <div class="price-cell ${isCheapest ? "best-price" : ""}">
+                  $${ing.price.toFixed(2)}${isCheapest ? ' <span class="badge badge-split" title="Cheapest for this ingredient">💲</span>' : ""}
+                </div>
+                <div class="product-name">${escHtml(ing.product)}</div>
+                <div class="product-meta">${escHtml(ing.brand || "")} ${escHtml(ing.size || "")}</div>
+              </td>
+            `;
+          }
+        });
+
+        html += `<td class="total-cell price-cell">$${store.totalPrice.toFixed(2)}</td>`;
+        html += `<td>${store.missingCount > 0
+          ? `<span class="badge badge-missing">${store.missingCount}</span>`
+          : "✅"}</td>`;
+        html += `</tr>`;
+      });
+
+      // ── Split shopping row ──
+      html += `<tr class="split-row">`;
+      html += `<td colspan="2"><span class="product-name">💲 Cheapest Split</span> <span class="badge badge-split">Best per item</span><div class="product-meta">Cheapest option for each ingredient, any store</div></td>`;
+
+      data.splitBest.forEach(s => {
+        if (!s.cheapest) {
+          html += `<td class="missing-cell">Not found</td>`;
+        } else {
+          html += `
+            <td>
+              <div class="price-cell best-price">$${s.cheapest.price.toFixed(2)}</div>
+              <div class="product-name">${escHtml(s.cheapest.storeName)}</div>
+              <div class="product-meta">${escHtml(s.cheapest.product)}</div>
+            </td>
+          `;
+        }
+      });
+
+      html += `<td class="total-cell price-cell">$${data.splitTotal.toFixed(2)}</td>`;
+      html += `<td>—</td></tr>`;
+
+      html += `</tbody></table></div>`;
+
+      resultsDiv.innerHTML = html;
+    } catch (err) {
+      resultsDiv.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
+    }
+  }
+
+  function escHtml(str) {
+    return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
 </body>
 </html>
