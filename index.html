@@ -22,7 +22,8 @@
 
       const resultsDiv = document.getElementById("results");
       resultsDiv.innerHTML = "";
-
+      
+      resultsDiv.innerHTML = `<h2>Store: ${data.store}</h2>`;
       data.products.forEach(p => {
         const item = p.items[0];
 
