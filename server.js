@@ -9,6 +9,7 @@ const db = require("./db");
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 let accessToken = null;
 let tokenExpiry = 0;
@@ -196,6 +197,58 @@ function getLowestPricedProduct(products) {
   if (valid.length === 0) return null;
   valid.sort((a, b) => a.items[0].price.regular - b.items[0].price.regular);
   return valid[0];
+}
+
+// ─── Claude: ingredient suggestion ───────────────────────────────────────────
+
+async function suggestRecipeIngredients(recipeName) {
+  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set in .env");
+
+  const body = JSON.stringify({
+    model: "claude-haiku-4-5",
+    max_tokens: 512,
+    system: [
+      {
+        type: "text",
+        text: "You are a grocery shopping assistant. Given a recipe name, return the ingredients as grocery store search terms — no quantities, no measurements, just the ingredient name as you would type it into a grocery store search bar. Respond with ONLY a JSON array of strings, nothing else. Example: [\"all-purpose flour\",\"unsalted butter\",\"eggs\",\"granulated sugar\",\"vanilla extract\"]",
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: `Recipe: ${recipeName}` }],
+  });
+
+  const resp = await httpsRequest(
+    {
+      hostname: "api.anthropic.com",
+      path: "/v1/messages",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "prompt-caching-2024-07-31",
+        "Accept-Encoding": "identity",
+      },
+    },
+    body
+  );
+
+  if (resp.status !== 200) {
+    throw new Error(`Anthropic API error ${resp.status}: ${JSON.stringify(resp.body)}`);
+  }
+
+  const text = resp.body.content?.[0]?.text || "[]";
+  let ingredients;
+  try {
+    ingredients = JSON.parse(text);
+  } catch {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) ingredients = JSON.parse(match[0]);
+    else throw new Error("Could not parse ingredient list from Claude response");
+  }
+  if (!Array.isArray(ingredients)) throw new Error("Unexpected response format from Claude");
+  return ingredients.map(String).filter(Boolean);
 }
 
 // ─── Resolve origin ───────────────────────────────────────────────────────────
@@ -495,6 +548,21 @@ const server = http.createServer(async (req, res) => {
       res.setHeader("Content-Type", "application/json");
       res.writeHead(200);
       res.end(JSON.stringify(db.getStorePerformance(), null, 2));
+      return;
+    }
+
+    // ── Suggest recipe ingredients via Claude ──
+    if (parsed.pathname === "/suggest-recipe") {
+      res.setHeader("Content-Type", "application/json");
+      const { name } = parsed.query;
+      if (!name || !name.trim()) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "name is required" }));
+        return;
+      }
+      const ingredients = await suggestRecipeIngredients(name.trim());
+      res.writeHead(200);
+      res.end(JSON.stringify({ ingredients }));
       return;
     }
 
