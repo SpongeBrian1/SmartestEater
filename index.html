@@ -204,6 +204,53 @@
 
     .loading { color: #777; font-style: italic; padding: 1rem 0; }
     .error { color: #b71c1c; padding: 1rem 0; }
+
+    /* ── Price History tab ── */
+    #historyPanel { display: none; }
+
+    .trend-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 640px) { .trend-grid { grid-template-columns: 1fr; } }
+
+    .bar-chart { width: 100%; }
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 0.82rem;
+    }
+    .bar-label { width: 36px; text-align: right; color: #555; flex-shrink: 0; }
+    .bar-track {
+      flex: 1;
+      background: #e8f5e9;
+      border-radius: 4px;
+      height: 20px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      background: #2e7d32;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+      display: flex;
+      align-items: center;
+      padding-left: 6px;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .bar-samples { color: #aaa; font-size: 0.75rem; flex-shrink: 0; }
+
+    .sparkline-wrap { overflow-x: auto; }
+    .sparkline-table { border-collapse: collapse; width: 100%; min-width: 300px; font-size: 0.8rem; }
+    .sparkline-table th { background: #f5f5f5; border: 1px solid #ddd; padding: 5px 8px; }
+    .sparkline-table td { border: 1px solid #ddd; padding: 4px 8px; }
   </style>
 </head>
 <body>
@@ -219,6 +266,7 @@
   <div class="tabs">
     <button class="tab-btn active" onclick="setMode('item')">Single Item</button>
     <button class="tab-btn" onclick="setMode('recipe')">Recipe / Shopping List</button>
+    <button class="tab-btn" onclick="setMode('history')">📈 Price History</button>
   </div>
 
   <!-- ── Controls ── -->
@@ -257,6 +305,25 @@
   <!-- ── Results ── -->
   <div id="results"></div>
 
+  <!-- ── Price History panel ── -->
+  <div id="historyPanel">
+    <div class="card">
+      <div class="row">
+        <div class="field">
+          <label for="historyItem">Item</label>
+          <input type="text" id="historyItem" placeholder="e.g. milk" list="historyItemList">
+          <datalist id="historyItemList"></datalist>
+        </div>
+        <div class="field-sm">
+          <label for="historyDays">Days back</label>
+          <input type="text" id="historyDays" value="30" style="width:100%">
+        </div>
+        <button class="btn btn-green" onclick="loadHistory()">View History</button>
+      </div>
+    </div>
+    <div id="historyResults"></div>
+  </div>
+
 </div>
 
 <script>
@@ -267,12 +334,154 @@
   // ── Mode switching ─────────────────────────────────────────────────────────
   function setMode(mode) {
     currentMode = mode;
-    document.querySelectorAll(".tab-btn").forEach((b, i) => {
-      b.classList.toggle("active", (i === 0) === (mode === "item"));
-    });
+    const btns = document.querySelectorAll(".tab-btn");
+    btns[0].classList.toggle("active", mode === "item");
+    btns[1].classList.toggle("active", mode === "recipe");
+    btns[2].classList.toggle("active", mode === "history");
+
     document.getElementById("itemControls").style.display   = mode === "item"   ? "" : "none";
     document.getElementById("recipeControls").style.display = mode === "recipe" ? "" : "none";
-    document.getElementById("results").innerHTML = "";
+    document.querySelector(".card").style.display           = mode === "history" ? "none" : "";
+    document.getElementById("results").innerHTML            = "";
+    document.getElementById("historyPanel").style.display  = mode === "history" ? "" : "none";
+
+    if (mode === "history") populateHistoryItems();
+  }
+
+  // ── History: populate datalist ─────────────────────────────────────────────
+  async function populateHistoryItems() {
+    try {
+      const items = await fetch("http://localhost:3000/history-items").then(r => r.json());
+      const dl = document.getElementById("historyItemList");
+      dl.innerHTML = items.map(i => `<option value="${escHtml(i.query)}">`).join("");
+      if (items.length && !document.getElementById("historyItem").value) {
+        document.getElementById("historyItem").value = items[0].query;
+      }
+    } catch (_) {}
+  }
+
+  // ── History: load & render ─────────────────────────────────────────────────
+  async function loadHistory() {
+    const item = document.getElementById("historyItem").value.trim();
+    const days = parseInt(document.getElementById("historyDays").value, 10) || 30;
+    if (!item) return;
+
+    const out = document.getElementById("historyResults");
+    out.innerHTML = '<p class="loading">Loading price history…</p>';
+
+    try {
+      const [histData, trendData] = await Promise.all([
+        fetch(`http://localhost:3000/history?item=${encodeURIComponent(item)}&days=${days}`).then(r => r.json()),
+        fetch(`http://localhost:3000/trends?item=${encodeURIComponent(item)}`).then(r => r.json()),
+      ]);
+
+      if (!histData.records?.length) {
+        out.innerHTML = `<p class="error">No price history for "<b>${escHtml(item)}</b>" yet. Run a search first to start collecting data.</p>`;
+        return;
+      }
+
+      let html = `<p class="section-title">Price History — "${escHtml(item)}" (last ${days} days, ${histData.records.length} records)</p>`;
+
+      // ── Trend panels side by side ──
+      html += `<div class="trend-grid">`;
+
+      // Day-of-week bar chart
+      if (trendData.byDayOfWeek?.length) {
+        const maxAvg = Math.max(...trendData.byDayOfWeek.map(d => d.avg_price));
+        html += `
+          <div class="card">
+            <div class="section-title" style="margin-top:0">Avg Price by Day of Week</div>
+            <div class="bar-chart">
+        `;
+        trendData.byDayOfWeek.forEach(d => {
+          const pct = maxAvg > 0 ? Math.round((d.avg_price / maxAvg) * 100) : 0;
+          html += `
+            <div class="bar-row">
+              <span class="bar-label">${escHtml(d.day_name)}</span>
+              <div class="bar-track">
+                <div class="bar-fill" style="width:${pct}%">$${d.avg_price.toFixed(2)}</div>
+              </div>
+              <span class="bar-samples">${d.samples}×</span>
+            </div>
+          `;
+        });
+        html += `</div></div>`;
+      }
+
+      // By-store breakdown
+      if (trendData.byStore?.length) {
+        const maxStore = Math.max(...trendData.byStore.map(s => s.avg_price));
+        html += `
+          <div class="card">
+            <div class="section-title" style="margin-top:0">Avg Price by Store</div>
+            <div class="bar-chart">
+        `;
+        trendData.byStore.forEach((s, i) => {
+          const pct = maxStore > 0 ? Math.round((s.avg_price / maxStore) * 100) : 0;
+          const color = i === 0 ? "#1b5e20" : "#2e7d32";
+          html += `
+            <div class="bar-row">
+              <span class="bar-label" style="width:auto;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(s.store_name)}">${escHtml(s.store_name.replace(/^Kroger\s*/i,""))}</span>
+              <div class="bar-track">
+                <div class="bar-fill" style="width:${pct}%;background:${color}">$${s.avg_price.toFixed(2)}</div>
+              </div>
+              <span class="bar-samples">${s.samples}×</span>
+            </div>
+          `;
+        });
+        html += `</div></div>`;
+      }
+
+      html += `</div>`; // end trend-grid
+
+      // Price over time table
+      if (trendData.priceOverTime?.length) {
+        html += `
+          <div class="card">
+            <div class="section-title" style="margin-top:0">Price Over Time (daily avg)</div>
+            <div class="sparkline-wrap">
+              <table class="sparkline-table">
+                <thead><tr><th>Date</th><th>Min</th><th>Avg</th><th>Max</th><th>Samples</th></tr></thead>
+                <tbody>
+        `;
+        trendData.priceOverTime.forEach(r => {
+          html += `<tr>
+            <td>${escHtml(r.date_str)}</td>
+            <td class="price-cell">$${r.min_price.toFixed(2)}</td>
+            <td class="price-cell">$${r.avg_price.toFixed(2)}</td>
+            <td>$${r.max_price.toFixed(2)}</td>
+            <td style="color:#999">${r.samples}</td>
+          </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+      }
+
+      // Raw history log
+      html += `
+        <div class="card">
+          <div class="section-title" style="margin-top:0">Raw Log (most recent first)</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Store</th><th>Product</th><th>Brand</th><th>Size</th><th>Price</th><th>Distance</th></tr></thead>
+              <tbody>
+      `;
+      histData.records.slice(0, 200).forEach(r => {
+        html += `<tr>
+          <td>${escHtml(r.date_str)}</td>
+          <td>${escHtml(r.store_name)}</td>
+          <td>${escHtml(r.product || "—")}</td>
+          <td>${escHtml(r.brand || "—")}</td>
+          <td>${escHtml(r.size || "—")}</td>
+          <td class="price-cell">$${Number(r.price).toFixed(2)}</td>
+          <td>${r.distance_miles != null ? r.distance_miles + " mi" : "—"}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div></div>`;
+
+      out.innerHTML = html;
+    } catch (err) {
+      out.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
+    }
   }
 
   // ── Location ───────────────────────────────────────────────────────────────
