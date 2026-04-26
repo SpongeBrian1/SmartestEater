@@ -302,8 +302,9 @@
     </div>
   </div>
 
-  <!-- ── Results ── -->
-  <div id="results"></div>
+  <!-- ── Per-tab result panels (each preserved independently) ── -->
+  <div id="itemPanel"><div id="itemResults"></div></div>
+  <div id="recipePanel" style="display:none"><div id="recipeResults"></div></div>
 
   <!-- ── Price History panel ── -->
   <div id="historyPanel">
@@ -342,21 +343,37 @@
     document.getElementById("itemControls").style.display   = mode === "item"   ? "" : "none";
     document.getElementById("recipeControls").style.display = mode === "recipe" ? "" : "none";
     document.querySelector(".card").style.display           = mode === "history" ? "none" : "";
-    document.getElementById("results").innerHTML            = "";
-    document.getElementById("historyPanel").style.display  = mode === "history" ? "" : "none";
+    document.getElementById("itemPanel").style.display      = mode === "item"    ? "" : "none";
+    document.getElementById("recipePanel").style.display    = mode === "recipe"  ? "" : "none";
+    document.getElementById("historyPanel").style.display   = mode === "history" ? "" : "none";
 
     if (mode === "history") populateHistoryItems();
   }
 
   // ── History: populate datalist ─────────────────────────────────────────────
   async function populateHistoryItems() {
+    const out = document.getElementById("historyResults");
     try {
       const items = await fetch("http://localhost:3000/history-items").then(r => r.json());
       const dl = document.getElementById("historyItemList");
       dl.innerHTML = items.map(i => `<option value="${escHtml(i.query)}">`).join("");
-      if (items.length && !document.getElementById("historyItem").value) {
-        document.getElementById("historyItem").value = items[0].query;
+
+      if (!items.length) {
+        out.innerHTML = `<div class="card" style="color:#555;font-size:0.9rem;line-height:1.6">
+          <b>No price data yet.</b><br>
+          Run a search on the <b>Single Item</b> or <b>Recipe</b> tab first —
+          every result is automatically saved here. Come back after a few searches
+          to see price trends and day-of-week patterns.
+        </div>`;
+        return;
       }
+
+      const inputEl = document.getElementById("historyItem");
+      if (!inputEl.value) {
+        inputEl.value = items[0].query;
+      }
+      // Auto-load history for the pre-filled item if results are not already shown
+      if (!out.innerHTML.trim()) loadHistory();
     } catch (_) {}
   }
 
@@ -533,7 +550,7 @@
 
   function clearRecipe() {
     document.getElementById("recipeText").value = "";
-    document.getElementById("results").innerHTML = "";
+    document.getElementById("recipeResults").innerHTML = "";
   }
 
   // ── Single item search ─────────────────────────────────────────────────────
@@ -541,7 +558,7 @@
     const item = document.getElementById("item").value.trim();
     if (!item) return;
 
-    const resultsDiv = document.getElementById("results");
+    const resultsDiv = document.getElementById("itemResults");
     resultsDiv.innerHTML = '<p class="loading">Searching stores…</p>';
 
     try {
@@ -597,12 +614,12 @@
   async function searchRecipe() {
     const ingredients = parseIngredients();
     if (!ingredients.length) {
-      document.getElementById("results").innerHTML =
+      document.getElementById("recipeResults").innerHTML =
         '<p class="error">Please enter at least one ingredient.</p>';
       return;
     }
 
-    const resultsDiv = document.getElementById("results");
+    const resultsDiv = document.getElementById("recipeResults");
     resultsDiv.innerHTML = `<p class="loading">Checking ${ingredients.length} ingredient(s) across nearby stores… this may take a moment.</p>`;
 
     try {
