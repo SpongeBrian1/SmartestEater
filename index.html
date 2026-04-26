@@ -385,6 +385,14 @@
 
     <!-- Recipe controls -->
     <div id="recipeControls" style="display:none; margin-top:10px;">
+      <div class="row" style="margin-bottom:8px">
+        <div class="field">
+          <label for="recipeName">Recipe name <span style="font-weight:400;color:#777">(let AI fill ingredients)</span></label>
+          <input type="text" id="recipeName" placeholder="e.g. chocolate chip cookies, beef tacos, pasta carbonara">
+        </div>
+        <button class="btn btn-blue" id="generateBtn" onclick="generateIngredients()">✨ Generate</button>
+      </div>
+      <div id="generateStatus" style="font-size:0.82rem;min-height:1.2em;margin-bottom:6px"></div>
       <label>Ingredients <span style="font-weight:400;color:#777">(one per line, or comma-separated)</span></label>
       <textarea id="recipeText" placeholder="milk&#10;eggs&#10;all-purpose flour&#10;unsalted butter&#10;sugar"></textarea>
       <div class="hint">💡 Use ingredient names as you'd search a grocery store (e.g. "all-purpose flour" not "2 cups flour").</div>
@@ -1182,6 +1190,35 @@
       trendsLoaded = true;
     } catch (err) {
       out.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
+    }
+  }
+
+  // ── AI ingredient generation ───────────────────────────────────────────────
+  async function generateIngredients() {
+    const name = document.getElementById("recipeName").value.trim();
+    const status = document.getElementById("generateStatus");
+    if (!name) {
+      status.textContent = "Enter a recipe name first.";
+      status.style.color = "#b71c1c";
+      return;
+    }
+    const btn = document.getElementById("generateBtn");
+    btn.disabled = true;
+    btn.textContent = "Generating…";
+    status.textContent = "";
+
+    try {
+      const data = await fetch(`/suggest-recipe?name=${encodeURIComponent(name)}`).then(r => r.json());
+      if (data.error) throw new Error(data.error);
+      document.getElementById("recipeText").value = data.ingredients.join("\n");
+      status.textContent = `✅ Generated ${data.ingredients.length} ingredients — review and click Find Best Store to search.`;
+      status.style.color = "#2e7d32";
+    } catch (err) {
+      status.textContent = `Error: ${escHtml(err.message)}`;
+      status.style.color = "#b71c1c";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "✨ Generate";
     }
   }
 
