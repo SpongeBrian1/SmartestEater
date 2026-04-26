@@ -291,6 +291,57 @@
     .consistency-fill { background: #1565c0; }
     .gap-good { color: #2e7d32; font-weight: 700; }
     .gap-bad  { color: #b71c1c; }
+
+    /* ── Weekly Trends tab ── */
+    .trends-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      margin-bottom: 1.25rem;
+    }
+    .trend-item-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+    }
+    .trend-item-card.cheaper   { border-left: 4px solid #2e7d32; }
+    .trend-item-card.pricier   { border-left: 4px solid #b71c1c; }
+    .trend-item-card.same      { border-left: 4px solid #9e9e9e; }
+    .trend-item-card.no-prev   { border-left: 4px solid #e0e0e0; }
+    .trend-item-name { font-size: 0.95rem; font-weight: 700; text-transform: capitalize; margin-bottom: 4px; }
+    .trend-change {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .trend-change.cheaper { color: #2e7d32; }
+    .trend-change.pricier { color: #b71c1c; }
+    .trend-change.same    { color: #757575; }
+    .trend-prices { font-size: 0.82rem; color: #555; margin-bottom: 6px; }
+    .trend-mini-bars { display: flex; align-items: flex-end; gap: 4px; height: 28px; margin-top: 6px; }
+    .trend-mini-bar {
+      flex: 1;
+      background: #c8e6c9;
+      border-radius: 2px 2px 0 0;
+      position: relative;
+      min-height: 4px;
+    }
+    .trend-mini-bar.current { background: #2e7d32; }
+    .trend-mini-bar.pricier-color { background: #ef9a9a; }
+    .trend-mini-bar.pricier-color.current { background: #b71c1c; }
+    .trend-mini-label { font-size: 0.65rem; color: #aaa; text-align: center; margin-top: 2px; }
+    .trend-week-labels { display: flex; gap: 4px; }
+    .trend-week-labels span { flex: 1; font-size: 0.65rem; color: #aaa; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .trends-table-wrap { overflow-x: auto; }
+    .trends-table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+    .trends-table th { background: #f5f5f5; border: 1px solid #ddd; padding: 7px 10px; text-align: left; font-weight: 600; white-space: nowrap; }
+    .trends-table td { border: 1px solid #ddd; padding: 6px 10px; vertical-align: middle; }
+    .trends-table tr:hover td { background: #fafafa; }
+    .arrow-up   { color: #b71c1c; font-weight: 700; }
+    .arrow-down { color: #2e7d32; font-weight: 700; }
+    .arrow-same { color: #9e9e9e; }
   </style>
 </head>
 <body>
@@ -308,6 +359,7 @@
     <button class="tab-btn" onclick="setMode('recipe')">Recipe / Shopping List</button>
     <button class="tab-btn" onclick="setMode('history')">📈 Price History</button>
     <button class="tab-btn" onclick="setMode('stats')">🏆 Store Stats</button>
+    <button class="tab-btn" onclick="setMode('trends')">📊 Weekly Trends</button>
   </div>
 
   <!-- ── Controls ── -->
@@ -352,6 +404,11 @@
     <div id="statsResults"></div>
   </div>
 
+  <!-- ── Weekly Trends panel ── -->
+  <div id="trendsPanel" style="display:none">
+    <div id="trendsResults"></div>
+  </div>
+
   <!-- ── Price History panel ── -->
   <div id="historyPanel">
     <div class="card">
@@ -386,8 +443,9 @@
     btns[1].classList.toggle("active", mode === "recipe");
     btns[2].classList.toggle("active", mode === "history");
     btns[3].classList.toggle("active", mode === "stats");
+    btns[4].classList.toggle("active", mode === "trends");
 
-    const hideControls = mode === "history" || mode === "stats";
+    const hideControls = mode === "history" || mode === "stats" || mode === "trends";
     document.getElementById("itemControls").style.display   = mode === "item"   ? "" : "none";
     document.getElementById("recipeControls").style.display = mode === "recipe" ? "" : "none";
     document.querySelector(".card").style.display           = hideControls ? "none" : "";
@@ -395,9 +453,11 @@
     document.getElementById("recipePanel").style.display    = mode === "recipe"  ? "" : "none";
     document.getElementById("historyPanel").style.display   = mode === "history" ? "block" : "none";
     document.getElementById("statsPanel").style.display     = mode === "stats"   ? "block" : "none";
+    document.getElementById("trendsPanel").style.display    = mode === "trends"  ? "block" : "none";
 
     if (mode === "history") populateHistoryItems();
     if (mode === "stats")   loadStoreStats();
+    if (mode === "trends")  loadWeeklyTrends();
   }
 
   // ── History: populate datalist ─────────────────────────────────────────────
@@ -502,6 +562,65 @@
       }
 
       html += `</div>`; // end trend-grid
+
+      // Week-over-week computed from priceOverTime data
+      if (trendData.priceOverTime?.length >= 2) {
+        const weekMap = {};
+        trendData.priceOverTime.forEach(r => {
+          const d = new Date(r.date_str);
+          const year = d.getFullYear();
+          const startOfYear = new Date(year, 0, 1);
+          const weekNum = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+          const key = `${year}-W${String(weekNum).padStart(2, "0")}`;
+          if (!weekMap[key]) weekMap[key] = { total: 0, count: 0, min: Infinity };
+          weekMap[key].total += r.avg_price;
+          weekMap[key].count++;
+          if (r.min_price < weekMap[key].min) weekMap[key].min = r.min_price;
+        });
+        const weekEntries = Object.entries(weekMap)
+          .map(([k, v]) => ({ week: k, avg: Math.round(v.total / v.count * 100) / 100, min: v.min }))
+          .sort((a, b) => a.week < b.week ? 1 : -1); // most recent first
+
+        if (weekEntries.length >= 2) {
+          const cur  = weekEntries[0];
+          const prev = weekEntries[1];
+          const delta = cur.avg - prev.avg;
+          const pct   = Math.round(delta / prev.avg * 1000) / 10;
+          const dir   = delta < -0.001 ? "cheaper" : delta > 0.001 ? "pricier" : "same";
+          const arrow = dir === "cheaper" ? "↓" : dir === "pricier" ? "↑" : "→";
+          const arrowClass = dir === "cheaper" ? "arrow-down" : dir === "pricier" ? "arrow-up" : "arrow-same";
+          const label = dir === "cheaper" ? "Getting cheaper" : dir === "pricier" ? "Getting more expensive" : "Price unchanged";
+
+          html += `
+            <div class="card" style="border-left:4px solid ${dir === "cheaper" ? "#2e7d32" : dir === "pricier" ? "#b71c1c" : "#9e9e9e"}">
+              <div class="section-title" style="margin-top:0">Week-over-Week</div>
+              <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+                <div>
+                  <span class="${arrowClass}" style="font-size:2rem">${arrow}</span>
+                  <span class="${arrowClass}" style="font-size:1.2rem;font-weight:700;margin-left:4px">${pct > 0 ? "+" : ""}${pct}%</span>
+                </div>
+                <div style="font-size:0.9rem;color:#444">
+                  <b>${label}</b><br>
+                  This week avg: <b>$${cur.avg.toFixed(2)}</b> &nbsp;|&nbsp;
+                  Last week avg: <b>$${prev.avg.toFixed(2)}</b>
+                </div>
+              </div>
+              ${weekEntries.length > 2 ? `<div style="margin-top:10px;font-size:0.8rem;color:#777">
+                ${weekEntries.slice(0, 4).map((w, i) => `
+                  <span style="display:inline-block;margin-right:16px">
+                    <span style="color:#999">${w.week}</span>
+                    <b style="color:#1a1a1a;margin-left:4px">$${w.avg.toFixed(2)}</b>
+                    ${i > 0 ? (() => {
+                      const d2 = w.avg - weekEntries[i - 1].avg;
+                      const p2 = Math.round(d2 / weekEntries[i-1].avg * 1000) / 10;
+                      return `<span class="${d2 < 0 ? "arrow-down" : d2 > 0 ? "arrow-up" : "arrow-same"}">${d2 < 0 ? "↑" : d2 > 0 ? "↓" : "→"}${Math.abs(p2)}%</span>`;
+                    })() : ""}
+                  </span>`).join("")}
+              </div>` : ""}
+            </div>
+          `;
+        }
+      }
 
       // Price over time table
       if (trendData.priceOverTime?.length) {
@@ -930,6 +1049,137 @@
 
       out.innerHTML = html;
       statsLoaded = true;
+    } catch (err) {
+      out.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
+    }
+  }
+
+  // ── Weekly Trends ──────────────────────────────────────────────────────────
+  let trendsLoaded = false;
+
+  async function loadWeeklyTrends() {
+    const out = document.getElementById("trendsResults");
+    if (trendsLoaded && out.innerHTML.trim()) return;
+    out.innerHTML = '<p class="loading">Loading weekly trends…</p>';
+    trendsLoaded = false;
+
+    try {
+      const items = await fetch("/weekly-trends").then(r => r.json());
+
+      if (!items.length) {
+        out.innerHTML = `<div class="card" style="color:#555;font-size:0.9rem;line-height:1.6">
+          <b>No price data yet.</b><br>
+          Run searches on the <b>Single Item</b> or <b>Recipe</b> tab first.
+          Trends appear after you have data from at least two different weeks.
+        </div>`;
+        return;
+      }
+
+      const cheaper = items.filter(i => i.direction === "cheaper");
+      const pricier = items.filter(i => i.direction === "pricier");
+      const same    = items.filter(i => i.direction === "same" || i.direction === null);
+
+      let html = `<p class="section-title">Week-over-Week Price Trends (last 4 weeks)</p>`;
+
+      // Summary banner
+      if (cheaper.length || pricier.length) {
+        html += `<div class="card" style="margin-bottom:1.25rem;display:flex;gap:20px;flex-wrap:wrap;align-items:center">`;
+        if (cheaper.length) html += `<span style="color:#2e7d32;font-size:1rem;font-weight:700">↓ ${cheaper.length} item${cheaper.length > 1 ? "s" : ""} cheaper</span>`;
+        if (pricier.length) html += `<span style="color:#b71c1c;font-size:1rem;font-weight:700">↑ ${pricier.length} item${pricier.length > 1 ? "s" : ""} more expensive</span>`;
+        if (same.length)    html += `<span style="color:#9e9e9e;font-size:0.9rem">${same.length} item${same.length > 1 ? "s" : ""} unchanged / new</span>`;
+        html += `</div>`;
+      }
+
+      // Cards grid
+      html += `<div class="trends-summary">`;
+      items.forEach(item => {
+        const dir = item.direction || "no-prev";
+        const hasPrev = item.previous_avg !== null;
+        const arrow = dir === "cheaper" ? "↓" : dir === "pricier" ? "↑" : dir === "same" ? "→" : "—";
+        const arrowClass = dir === "cheaper" ? "arrow-down" : dir === "pricier" ? "arrow-up" : "arrow-same";
+        const changeStr = hasPrev
+          ? `${item.pct_change > 0 ? "+" : ""}${item.pct_change}%`
+          : "New";
+
+        // Mini sparkline bars
+        const maxAvg = Math.max(...item.history.map(w => w.avg_price));
+        const miniBarsPricier = dir === "pricier";
+        const barsHtml = item.history.slice().reverse().map((w, i) => {
+          const heightPct = maxAvg > 0 ? Math.round(w.avg_price / maxAvg * 100) : 50;
+          const isCurrent = i === item.history.length - 1;
+          return `<div class="trend-mini-bar ${miniBarsPricier ? "pricier-color" : ""} ${isCurrent ? "current" : ""}" style="height:${heightPct}%" title="${w.week_str}: $${w.avg_price}"></div>`;
+        }).join("");
+        const weeksHtml = item.history.slice().reverse().map(w =>
+          `<span>${w.week_str.split("-W")[1] ? "W" + w.week_str.split("-W")[1] : w.week_str}</span>`
+        ).join("");
+
+        html += `
+          <div class="trend-item-card ${dir}">
+            <div class="trend-item-name">${escHtml(item.query)}</div>
+            <div class="trend-change ${dir}">
+              <span class="${arrowClass}">${arrow}</span> ${changeStr}
+            </div>
+            <div class="trend-prices">
+              This week: <b>$${item.current_avg.toFixed(2)}</b>
+              ${hasPrev ? `&nbsp;|&nbsp; Last week: <b>$${item.previous_avg.toFixed(2)}</b>` : ""}
+            </div>
+            <div class="trend-mini-bars">${barsHtml}</div>
+            <div class="trend-week-labels">${weeksHtml}</div>
+            <div style="font-size:0.72rem;color:#aaa;margin-top:4px">${item.current_samples} sample${item.current_samples !== 1 ? "s" : ""} this week</div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+
+      // Detail table
+      html += `
+        <div class="card">
+          <div class="section-title" style="margin-top:0">All Items — Detail</div>
+          <div class="trends-table-wrap">
+            <table class="trends-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>This Week Avg</th>
+                  <th>Last Week Avg</th>
+                  <th>Change</th>
+                  <th>Direction</th>
+                  <th>Samples</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      items.forEach(item => {
+        const hasPrev = item.previous_avg !== null;
+        const dir = item.direction || "no-prev";
+        const arrow = dir === "cheaper" ? "↓" : dir === "pricier" ? "↑" : dir === "same" ? "→" : "—";
+        const arrowClass = dir === "cheaper" ? "arrow-down" : dir === "pricier" ? "arrow-up" : "arrow-same";
+        const label = dir === "cheaper" ? "Cheaper" : dir === "pricier" ? "Pricier" : dir === "same" ? "Same" : "New";
+
+        html += `
+          <tr>
+            <td style="font-weight:600;text-transform:capitalize">${escHtml(item.query)}</td>
+            <td class="price-cell">$${item.current_avg.toFixed(2)}</td>
+            <td>${hasPrev ? `$${item.previous_avg.toFixed(2)}` : "<span style='color:#aaa'>—</span>"}</td>
+            <td class="${arrowClass}">
+              ${hasPrev ? `${item.pct_change > 0 ? "+" : ""}${item.pct_change}%` : "—"}
+            </td>
+            <td><span class="${arrowClass}">${arrow} ${label}</span></td>
+            <td style="color:#999">${item.current_samples}</td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table></div>
+        <p style="font-size:0.78rem;color:#999;margin-top:8px">
+          Compares average price across all nearby stores from this calendar week vs. the previous week.
+          Prices are averaged over all stores searched. Run more searches to improve accuracy.
+        </p>
+      </div>`;
+
+      out.innerHTML = html;
+      trendsLoaded = true;
     } catch (err) {
       out.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
     }

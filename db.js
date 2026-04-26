@@ -209,6 +209,53 @@ function getStorePerformance() {
   return { stores: rows, totalSessions };
 }
 
+// Week-over-week price trends for all tracked items (last 4 weeks)
+function getWeekOverWeekTrends() {
+  const since = Date.now() - 28 * 24 * 60 * 60 * 1000;
+  const rows = db.prepare(`
+    SELECT
+      query,
+      strftime('%Y-%W', date_str) AS week_str,
+      ROUND(AVG(price), 2)        AS avg_price,
+      ROUND(MIN(price), 2)        AS min_price,
+      COUNT(*)                    AS samples
+    FROM price_log
+    WHERE searched_at >= ?
+    GROUP BY query, week_str
+    ORDER BY query ASC, week_str DESC
+  `).all(since);
+
+  const byItem = {};
+  for (const row of rows) {
+    if (!byItem[row.query]) byItem[row.query] = [];
+    byItem[row.query].push(row);
+  }
+
+  return Object.entries(byItem).map(([query, weeks]) => {
+    const current  = weeks[0];
+    const previous = weeks[1] || null;
+    let pct_change = null;
+    let direction  = null;
+    if (previous && previous.avg_price > 0) {
+      const delta = current.avg_price - previous.avg_price;
+      pct_change  = Math.round((delta / previous.avg_price) * 1000) / 10;
+      direction   = delta < -0.001 ? "cheaper" : delta > 0.001 ? "pricier" : "same";
+    }
+    return {
+      query,
+      current_week:    current.week_str,
+      current_avg:     current.avg_price,
+      current_min:     current.min_price,
+      current_samples: current.samples,
+      previous_week:   previous ? previous.week_str  : null,
+      previous_avg:    previous ? previous.avg_price : null,
+      pct_change,
+      direction,
+      history: weeks,
+    };
+  }).sort((a, b) => Math.abs(b.pct_change ?? 0) - Math.abs(a.pct_change ?? 0));
+}
+
 module.exports = {
   logSingleItem,
   logRecipe,
@@ -218,4 +265,5 @@ module.exports = {
   getPriceByStore,
   getAllItems,
   getStorePerformance,
+  getWeekOverWeekTrends,
 };
