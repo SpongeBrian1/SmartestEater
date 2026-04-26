@@ -4,6 +4,7 @@ const fs = require("fs");
 const url = require("url");
 const zlib = require("zlib");
 require("dotenv").config();
+const db = require("./db");
 
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
@@ -405,6 +406,7 @@ const server = http.createServer(async (req, res) => {
       else origin = zip || "85001";
 
       const results = await compareStores(origin, item);
+      db.logSingleItem(item, results);
       res.writeHead(200);
       res.end(JSON.stringify({ bestDeal: results[0] || null, stores: results }, null, 2));
       return;
@@ -434,8 +436,49 @@ const server = http.createServer(async (req, res) => {
       else origin = zip || "85001";
 
       const result = await compareRecipe(origin, ingredients);
+      db.logRecipe(result.stores);
       res.writeHead(200);
       res.end(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    // ── Price history ──
+    if (parsed.pathname === "/history") {
+      res.setHeader("Content-Type", "application/json");
+      const { item, days = "30" } = parsed.query;
+      if (!item) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "item is required" }));
+        return;
+      }
+      const records = db.getHistory(item, parseInt(days, 10));
+      res.writeHead(200);
+      res.end(JSON.stringify({ item, days: parseInt(days, 10), records }, null, 2));
+      return;
+    }
+
+    // ── Price trends ──
+    if (parsed.pathname === "/trends") {
+      res.setHeader("Content-Type", "application/json");
+      const { item, days = "90" } = parsed.query;
+      if (!item) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "item is required" }));
+        return;
+      }
+      const byDayOfWeek  = db.getPriceByDayOfWeek(item);
+      const priceOverTime = db.getPriceOverTime(item, parseInt(days, 10));
+      const byStore       = db.getPriceByStore(item);
+      res.writeHead(200);
+      res.end(JSON.stringify({ item, byDayOfWeek, priceOverTime, byStore }, null, 2));
+      return;
+    }
+
+    // ── Tracked items list ──
+    if (parsed.pathname === "/history-items") {
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify(db.getAllItems(), null, 2));
       return;
     }
 
