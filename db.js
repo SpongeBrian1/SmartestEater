@@ -167,6 +167,48 @@ function getAllItems() {
   `).all();
 }
 
+// Store performance: win rate, avg price gap, consistency score
+// "win"        = had the lowest price in a (searched_at, query) session
+// "gap"        = avg $ above the cheapest option in each session
+// "consistency"= % of sessions where price was within 10% of cheapest
+function getStorePerformance() {
+  const rows = db.prepare(`
+    WITH min_per_session AS (
+      SELECT searched_at, query, MIN(price) AS min_price
+      FROM price_log
+      GROUP BY searched_at, query
+    )
+    SELECT
+      p.store_name,
+      COUNT(*)                                                                AS total_sessions,
+      SUM(CASE WHEN p.price = m.min_price THEN 1 ELSE 0 END)                AS wins,
+      ROUND(
+        CAST(SUM(CASE WHEN p.price = m.min_price THEN 1 ELSE 0 END) AS REAL)
+        / COUNT(*) * 100, 1
+      )                                                                        AS win_rate,
+      ROUND(AVG(p.price - m.min_price), 2)                                   AS avg_price_gap,
+      ROUND(AVG(
+        CAST(p.price - m.min_price AS REAL) / m.min_price * 100
+      ), 1)                                                                    AS avg_pct_above_cheapest,
+      ROUND(
+        SUM(CASE WHEN (CAST(p.price - m.min_price AS REAL) / m.min_price) <= 0.10
+                 THEN 1 ELSE 0 END)
+        * 100.0 / COUNT(*), 1
+      )                                                                        AS consistency_score
+    FROM price_log p
+    JOIN min_per_session m
+      ON p.searched_at = m.searched_at AND p.query = m.query
+    GROUP BY p.store_name
+    ORDER BY wins DESC, win_rate DESC
+  `).all();
+
+  const totalSessions = db.prepare(
+    `SELECT COUNT(DISTINCT searched_at || '|' || query) AS n FROM price_log`
+  ).get().n;
+
+  return { stores: rows, totalSessions };
+}
+
 module.exports = {
   logSingleItem,
   logRecipe,
@@ -175,4 +217,5 @@ module.exports = {
   getPriceByDayOfWeek,
   getPriceByStore,
   getAllItems,
+  getStorePerformance,
 };
