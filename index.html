@@ -251,6 +251,46 @@
     .sparkline-table { border-collapse: collapse; width: 100%; min-width: 300px; font-size: 0.8rem; }
     .sparkline-table th { background: #f5f5f5; border: 1px solid #ddd; padding: 5px 8px; }
     .sparkline-table td { border: 1px solid #ddd; padding: 4px 8px; }
+
+    /* ── Store Stats tab ── */
+    .stats-champions {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 1.25rem;
+    }
+    .champion-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+    }
+    .champion-card.gold   { border-color: #f9a825; background: #fffde7; }
+    .champion-card.blue   { border-color: #90caf9; background: #e3f2fd; }
+    .champion-card.purple { border-color: #ce93d8; background: #f3e5f5; }
+    .champion-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 4px; }
+    .champion-name  { font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
+    .champion-stat  { font-size: 0.85rem; color: #555; }
+
+    .stats-table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+    .stats-table th {
+      background: #f5f5f5; border: 1px solid #ddd;
+      padding: 7px 10px; text-align: left; font-weight: 600; white-space: nowrap;
+    }
+    .stats-table th.sortable { cursor: pointer; user-select: none; }
+    .stats-table th.sortable:hover { background: #ebebeb; }
+    .stats-table td { border: 1px solid #ddd; padding: 6px 10px; vertical-align: middle; }
+    .stats-table tr:hover td { background: #fafafa; }
+    .stats-table tr.rank-1 td { background: #fffde7; }
+
+    .win-bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+    .win-bar-track { flex: 1; background: #e8f5e9; border-radius: 3px; height: 14px; overflow: hidden; }
+    .win-bar-fill  { height: 100%; background: #2e7d32; border-radius: 3px; }
+    .win-rate-lbl  { font-size: 0.78rem; font-weight: 700; color: #1a1a1a; white-space: nowrap; width: 38px; text-align: right; }
+
+    .consistency-fill { background: #1565c0; }
+    .gap-good { color: #2e7d32; font-weight: 700; }
+    .gap-bad  { color: #b71c1c; }
   </style>
 </head>
 <body>
@@ -267,6 +307,7 @@
     <button class="tab-btn active" onclick="setMode('item')">Single Item</button>
     <button class="tab-btn" onclick="setMode('recipe')">Recipe / Shopping List</button>
     <button class="tab-btn" onclick="setMode('history')">📈 Price History</button>
+    <button class="tab-btn" onclick="setMode('stats')">🏆 Store Stats</button>
   </div>
 
   <!-- ── Controls ── -->
@@ -306,6 +347,11 @@
   <div id="itemPanel"><div id="itemResults"></div></div>
   <div id="recipePanel" style="display:none"><div id="recipeResults"></div></div>
 
+  <!-- ── Store Stats panel ── -->
+  <div id="statsPanel" style="display:none">
+    <div id="statsResults"></div>
+  </div>
+
   <!-- ── Price History panel ── -->
   <div id="historyPanel">
     <div class="card">
@@ -339,15 +385,19 @@
     btns[0].classList.toggle("active", mode === "item");
     btns[1].classList.toggle("active", mode === "recipe");
     btns[2].classList.toggle("active", mode === "history");
+    btns[3].classList.toggle("active", mode === "stats");
 
+    const hideControls = mode === "history" || mode === "stats";
     document.getElementById("itemControls").style.display   = mode === "item"   ? "" : "none";
     document.getElementById("recipeControls").style.display = mode === "recipe" ? "" : "none";
-    document.querySelector(".card").style.display           = mode === "history" ? "none" : "";
+    document.querySelector(".card").style.display           = hideControls ? "none" : "";
     document.getElementById("itemPanel").style.display      = mode === "item"    ? "" : "none";
     document.getElementById("recipePanel").style.display    = mode === "recipe"  ? "" : "none";
     document.getElementById("historyPanel").style.display   = mode === "history" ? "block" : "none";
+    document.getElementById("statsPanel").style.display     = mode === "stats"   ? "block" : "none";
 
     if (mode === "history") populateHistoryItems();
+    if (mode === "stats")   loadStoreStats();
   }
 
   // ── History: populate datalist ─────────────────────────────────────────────
@@ -754,6 +804,134 @@
       resultsDiv.innerHTML = html;
     } catch (err) {
       resultsDiv.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
+    }
+  }
+
+  // ── Store Stats ────────────────────────────────────────────────────────────
+  let statsLoaded = false;
+
+  async function loadStoreStats() {
+    const out = document.getElementById("statsResults");
+    if (statsLoaded && out.innerHTML.trim()) return; // cached
+    out.innerHTML = '<p class="loading">Loading store performance…</p>';
+    statsLoaded = false;
+
+    try {
+      const data = await fetch("http://localhost:3000/store-stats").then(r => r.json());
+      const stores = data.stores || [];
+
+      if (!stores.length) {
+        out.innerHTML = `<div class="card" style="color:#555;font-size:0.9rem;line-height:1.6">
+          <b>No data yet.</b><br>Run a search on the Single Item or Recipe tab first — every
+          result is saved and powers these stats.
+        </div>`;
+        return;
+      }
+
+      // ── Find champions ──
+      const champion      = stores[0]; // most wins
+      const mostConsistent = [...stores].sort((a,b) => b.consistency_score - a.consistency_score)[0];
+      const lowestGap     = [...stores].sort((a,b) => a.avg_price_gap - b.avg_price_gap)[0];
+
+      const maxWins = Math.max(...stores.map(s => s.wins));
+      const maxConsistency = Math.max(...stores.map(s => s.consistency_score));
+
+      // ── Champion cards ──
+      let html = `<p class="section-title">Store Performance — ${data.totalSessions} unique search sessions</p>`;
+      html += `<div class="stats-champions">`;
+
+      html += `
+        <div class="champion-card gold">
+          <div class="champion-label">🏆 Most Wins</div>
+          <div class="champion-name">${escHtml(champion.store_name)}</div>
+          <div class="champion-stat">${champion.wins} wins · ${champion.win_rate}% win rate</div>
+        </div>
+      `;
+      html += `
+        <div class="champion-card blue">
+          <div class="champion-label">🎯 Most Consistent</div>
+          <div class="champion-name">${escHtml(mostConsistent.store_name)}</div>
+          <div class="champion-stat">${mostConsistent.consistency_score}% within 10% of cheapest</div>
+        </div>
+      `;
+      html += `
+        <div class="champion-card purple">
+          <div class="champion-label">💲 Smallest Price Gap</div>
+          <div class="champion-name">${escHtml(lowestGap.store_name)}</div>
+          <div class="champion-stat">avg $${lowestGap.avg_price_gap.toFixed(2)} above cheapest</div>
+        </div>
+      `;
+
+      html += `</div>`; // end champions
+
+      // ── Full table ──
+      html += `
+        <div class="card">
+          <div class="section-title" style="margin-top:0">All Stores Ranked</div>
+          <div class="table-wrap">
+            <table class="stats-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Store</th>
+                  <th>Sessions</th>
+                  <th>Wins</th>
+                  <th style="min-width:160px">Win Rate</th>
+                  <th>Avg $ Gap</th>
+                  <th>Avg % Above Cheapest</th>
+                  <th style="min-width:160px">Consistency</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      stores.forEach((s, i) => {
+        const winPct   = maxWins > 0 ? Math.round(s.wins / maxWins * 100) : 0;
+        const consPct  = maxConsistency > 0 ? Math.round(s.consistency_score / maxConsistency * 100) : 0;
+        const gapClass = s.avg_price_gap === 0 ? "gap-good" : s.avg_price_gap <= 0.10 ? "" : "gap-bad";
+
+        html += `
+          <tr class="${i === 0 ? "rank-1" : ""}">
+            <td style="color:#999;font-size:0.78rem">${i + 1}</td>
+            <td>
+              <span style="font-weight:600">${escHtml(s.store_name)}</span>
+              ${i === 0 ? '<span class="badge badge-best" style="margin-left:4px">Champion</span>' : ""}
+            </td>
+            <td style="color:#777">${s.total_sessions}</td>
+            <td style="font-weight:700">${s.wins}</td>
+            <td>
+              <div class="win-bar-wrap">
+                <div class="win-bar-track">
+                  <div class="win-bar-fill" style="width:${winPct}%"></div>
+                </div>
+                <span class="win-rate-lbl">${s.win_rate}%</span>
+              </div>
+            </td>
+            <td class="${gapClass}">$${s.avg_price_gap.toFixed(2)}</td>
+            <td style="color:#555">${s.avg_pct_above_cheapest.toFixed(1)}%</td>
+            <td>
+              <div class="win-bar-wrap">
+                <div class="win-bar-track">
+                  <div class="win-bar-fill consistency-fill" style="width:${consPct}%"></div>
+                </div>
+                <span class="win-rate-lbl">${s.consistency_score}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table></div>
+        <p style="font-size:0.78rem;color:#999;margin-top:8px">
+          Win rate = % of search sessions where this store had the lowest price.
+          Consistency = % of sessions where price was within 10% of the cheapest option.
+        </p>
+      </div>`;
+
+      out.innerHTML = html;
+      statsLoaded = true;
+    } catch (err) {
+      out.innerHTML = `<p class="error">Error: ${escHtml(err.message)}. Is the server running?</p>`;
     }
   }
 

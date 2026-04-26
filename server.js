@@ -482,6 +482,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ── Store performance stats ──
+    if (parsed.pathname === "/store-stats") {
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify(db.getStorePerformance(), null, 2));
+      return;
+    }
+
     res.writeHead(404);
     res.end(JSON.stringify({ error: "Not found" }));
   } catch (err) {
