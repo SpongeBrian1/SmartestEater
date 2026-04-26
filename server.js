@@ -482,6 +482,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ── Week-over-week ingredient trends ──
+    if (parsed.pathname === "/weekly-trends") {
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify(db.getWeekOverWeekTrends(), null, 2));
+      return;
+    }
+
     // ── Store performance stats ──
     if (parsed.pathname === "/store-stats") {
       res.setHeader("Content-Type", "application/json");
