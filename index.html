@@ -404,7 +404,7 @@
   async function populateHistoryItems() {
     const out = document.getElementById("historyResults");
     try {
-      const items = await fetch("http://localhost:3000/history-items").then(r => r.json());
+      const items = await fetch("/history-items").then(r => r.json());
       const dl = document.getElementById("historyItemList");
       dl.innerHTML = items.map(i => `<option value="${escHtml(i.query)}">`).join("");
 
@@ -440,8 +440,8 @@
 
     try {
       const [histData, trendData] = await Promise.all([
-        fetch(`http://localhost:3000/history?item=${encodeURIComponent(item)}&days=${days}`).then(r => r.json()),
-        fetch(`http://localhost:3000/trends?item=${encodeURIComponent(item)}`).then(r => r.json()),
+        fetch(`/history?item=${encodeURIComponent(item)}&days=${days}`).then(r => r.json()),
+        fetch(`/trends?item=${encodeURIComponent(item)}`).then(r => r.json()),
       ]);
 
       if (!histData.records?.length) {
@@ -615,7 +615,7 @@
 
     try {
       const qs = `${buildOriginParams()}&item=${encodeURIComponent(item)}`;
-      const data = await fetch(`http://localhost:3000/compare?${qs}`).then(r => r.json());
+      const data = await fetch(`/compare?${qs}`).then(r => r.json());
 
       if (!data.stores?.length) {
         resultsDiv.innerHTML = '<p class="error">No stores or prices found for that item.</p>';
@@ -676,7 +676,7 @@
 
     try {
       const qs = `${buildOriginParams()}&ingredients=${encodeURIComponent(ingredients.join(","))}`;
-      const data = await fetch(`http://localhost:3000/recipe?${qs}`).then(r => r.json());
+      const data = await fetch(`/recipe?${qs}`).then(r => r.json());
 
       if (!data.stores?.length) {
         resultsDiv.innerHTML = '<p class="error">No stores found nearby.</p>';
@@ -817,7 +817,7 @@
     statsLoaded = false;
 
     try {
-      const data = await fetch("http://localhost:3000/store-stats").then(r => r.json());
+      const data = await fetch("/store-stats").then(r => r.json());
       const stores = data.stores || [];
 
       if (!stores.length) {
