@@ -345,7 +345,7 @@
     document.querySelector(".card").style.display           = mode === "history" ? "none" : "";
     document.getElementById("itemPanel").style.display      = mode === "item"    ? "" : "none";
     document.getElementById("recipePanel").style.display    = mode === "recipe"  ? "" : "none";
-    document.getElementById("historyPanel").style.display   = mode === "history" ? "" : "none";
+    document.getElementById("historyPanel").style.display   = mode === "history" ? "block" : "none";
 
     if (mode === "history") populateHistoryItems();
   }
@@ -374,7 +374,9 @@
       }
       // Auto-load history for the pre-filled item if results are not already shown
       if (!out.innerHTML.trim()) loadHistory();
-    } catch (_) {}
+    } catch (err) {
+      out.innerHTML = `<p class="error">Could not connect to server: ${escHtml(err.message)}. Is the server running?</p>`;
+    }
   }
 
   // ── History: load & render ─────────────────────────────────────────────────
